@@ -3,21 +3,35 @@
 //      Split project into multiple files
 //      Execute files along with REPL
 //      Lambdas/user-defined functions
+//      Booleans    - lexing and parsing
+//      Strings     - lexing and parsing
+//      Garbage collector - The arena allocator will not hold forever
+//      Write a real program in Ruse
+//      
+// General TODO: 
+//      Improve the Env type and functions
+//
+// Maybes (some ideas that I'm still on the fence):
+//      Rewrite in Zig
+//          - Better standard library
+//          - No need to hand roll basic data structures
+//          - Better memory safety
 //
 // Standard Library TODO:
 //      if expression
 //      Rest of arithmetics: + * /
-//      Logical 
-//      User input
+//      Logical operators
 //      Use multiple files
-//      IO - Piggy back off of C's IO
+//      IO  - Piggy back off of C's IO
+//          File handling
+//          Printing
+//          User input
 
 #include <assert.h>
 #include <editline/readline.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <readline/readline.h>
 #include <pigeon/alias.h>
 #include <pigeon/arena.h>
 #include <pigeon/allocator.h>
@@ -132,7 +146,7 @@ Token next_token() {
 
     if (is_digit(c)) {
         char* ptr = current;
-        while (is_digit(*ptr)) {
+        while (is_digit(*ptr) || *ptr == '.') {
             current++;
             ptr = current;
         }
@@ -164,7 +178,7 @@ typedef struct Atom Atom;
 typedef struct Cons Cons;
 typedef Expr*(*Native)(Expr*,Env*);
 
-
+// Tagged unions baby!
 struct Atom {
     enum {
         ATOM_NUMBER,
@@ -247,7 +261,6 @@ struct Expr {
         Cons* cons;
         Native native;
     } as;
-
 };
 
 Expr* expr_new_atom(Atom* atom) {
@@ -412,6 +425,10 @@ Expr* eval_list(Expr* expr, Env* env) {
     return func->as.native(expr_new_cons(cons->cdr), env);
 }
 
+// End evaluating
+//
+// Native functions
+
 Expr* native_sub(Expr* expr, Env* env) {
     Cons* cons = expr->as.cons;
     assert(cons->car);
@@ -439,6 +456,8 @@ Expr* native_define(Expr* expr, Env* env) {
     env_put(env, string_from_parts(sym->as.symbol.sym, sym->as.symbol.len), new_expr);
     return new_expr;
 }
+
+// End native functions
 
 i32 main(void) {
     arena = arena_new();
