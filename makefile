@@ -1,7 +1,7 @@
 SRC_DIR := src
 OBJ_DIR := obj
 TARGET_DIR := bin
-TARGET := $(TARGET_DIR)/main
+TARGET := $(TARGET_DIR)/ruse
 
 # Find all .c files in subdirectories of SRC_DIR
 SRC_FILES := $(shell find $(SRC_DIR) -type f -name "*.c")
@@ -10,7 +10,8 @@ SRC_FILES := $(shell find $(SRC_DIR) -type f -name "*.c")
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_FILES))
 
 CFLAGS := -Wall -Wextra -g -pedantic -fsanitize=address
-LIBS := 
+# CFLAGS := -Wall -Wextra -pedantic
+LIBS := -lpigeon -lreadline
 
 all: $(TARGET)
 
