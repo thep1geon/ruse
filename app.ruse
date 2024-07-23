@@ -1,0 +1,4 @@
+(do 
+    (define + (lambda (a b) (- a (- 0 b))))
+    (println (+ 3 4))
+)
