@@ -1,5 +1,4 @@
 // TODO: 
-//      Split project into multiple files
 //      Garbage collector - The arena allocator will not hold forever
 //      Tail call recursion
 //      Write a real program in Ruse
@@ -16,7 +15,6 @@
 #include <editline/readline.h>
 #include <string.h>
 #include <unistd.h>
-#include <pigeon/alias.h>
 #include <pigeon/arena.h>
 #include <pigeon/allocator.h>
 #include <pigeon/string.h>
@@ -26,8 +24,7 @@ Allocator g_allocator = {0};
 
 // Lexing
 
-char*     g_start = 0;
-char*     g_current = 0;
+char*     g_start = 0, *g_current = 0;
 u32       g_line = 1;
 
 typedef enum {
@@ -69,7 +66,6 @@ Token token_new_error(char* msg) {
 
 void lex(char* src) {
     g_start = src; 
-    g_current = src;
 }
 
 static inline bool is_digit(char c) {
