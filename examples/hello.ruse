@@ -1,0 +1,19 @@
+(do ;; The interpreter can only interpret one list, so we wrap everything in a 'do'
+  (import "std.ruse") ;; Import the standard library
+  ;; This gives us way more functions including, but not limited to:
+  ;;  >= = <= > ~ ++ -- filter map rev fact zero? empty?
+
+  (define var "Hello, World!") ;; Bind the variable 'var' to the value "Hello, World!"
+  (println var) ;; Hello, World!
+
+  ;; Bind the variable to a function that takes a number and returns that number squared
+  (define square (lambda (x) (* x x))) 
+
+  ;; Call square on 8 and print the return value
+  (println (square 8))
+
+  nil ;; The last expression in a 'do' is returned from the 'do'
+  )
+
+;; After interpreting the file, the REPL will start and all the variables and 
+;; functions you made will be available in the REPL

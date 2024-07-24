@@ -65,7 +65,7 @@ Token token_new_error(char* msg) {
 }
 
 void lex(char* src) {
-    g_start = src; 
+    g_current = src; 
 }
 
 static inline bool is_digit(char c) {
@@ -191,6 +191,7 @@ struct Atom {
         ATOM_SYMBOL,
         ATOM_BOOL,
         ATOM_STR,
+        ATOM_NIL,
     } tag;
 
     union {
@@ -209,6 +210,7 @@ Atom* atom_new_number(f64 n);
 Atom* atom_new_symbol(char* sym, u16 len);
 Atom* atom_new_bool(bool b);
 Atom* atom_new_str(char* sym, u16 len);
+Atom* atom_new_nil();
 bool atom_is_truthy(Atom* atom);
 void atom_print(Atom* atom);
 
@@ -324,12 +326,19 @@ Atom* atom_new_bool(bool b) {
     return atom;
 }
 
+Atom* atom_new_nil() {
+    Atom* atom = alloc(g_allocator, sizeof(Atom));
+    atom->tag = ATOM_NIL;
+    return atom;
+}
+
 bool atom_is_truthy(Atom* atom) {
     switch (atom->tag) {
         case ATOM_SYMBOL: return true;
         case ATOM_STR: return atom->as.str.len > 0;
         case ATOM_NUMBER: return atom->as.number > 0;
         case ATOM_BOOL: return atom->as.b;
+        case ATOM_NIL: return false;
     }
 
     assert(0 && "unreachable");
@@ -354,6 +363,11 @@ void atom_print(Atom* atom) {
 
         case ATOM_BOOL: {
             printf(" %s ", atom->as.b ? "t" : "f");
+            break;
+        }
+
+        case ATOM_NIL: {
+            printf(" NIL ");
             break;
         }
     }
@@ -1116,6 +1130,18 @@ EvalResult native_str_p(Cons* args, Env* env) {
         expr->tag == EXPR_ATOM && expr->as.atom->tag == ATOM_STR)));
 }
 
+EvalResult native_nil_p(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    return eval_result_ok(expr_new_atom(atom_new_bool(
+        expr->tag == EXPR_ATOM && expr->as.atom->tag == ATOM_NIL)));
+}
+
 // End native functions
 
 void repl(Env* env) {
@@ -1227,6 +1253,7 @@ i32 main(i32 argc, char** argv) {
     env_bind(&env, string_new("bool?"), expr_new_native(native_bool_p));
     env_bind(&env, string_new("str?"), expr_new_native(native_str_p));
     env_bind(&env, string_new("sym?"), expr_new_native(native_sym_p));
+    env_bind(&env, string_new("nil?"), expr_new_native(native_nil_p));
 
     env_bind(&env, string_new("import"), expr_new_native(native_import));
 
@@ -1239,6 +1266,7 @@ i32 main(i32 argc, char** argv) {
 
     env_bind(&env, string_new("t"), expr_new_atom(atom_new_bool(true)));
     env_bind(&env, string_new("f"), expr_new_atom(atom_new_bool(false)));
+    env_bind(&env, string_new("nil"), expr_new_atom(atom_new_nil()));
 
     if (argc >= 2) {
         EvalResult result = file(&env, argv[1]);
