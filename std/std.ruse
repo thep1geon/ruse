@@ -1,0 +1,92 @@
+(do
+  (define ! (lambda (a) 
+              (if a 
+                f 
+                t)))
+
+  (define or (lambda (a b) 
+               (if a 
+                 t 
+                 (if b 
+                   t 
+                   f))))
+
+  (define and (lambda (a b) 
+                (if a 
+                  (if b 
+                    t 
+                    f) 
+                  f)))
+
+  (define > (lambda (a b) 
+              (< b a)))
+
+  (define = (lambda (a b) 
+              (if (> a b) f 
+                (if (< a b) 
+                  f 
+                  t))))
+
+  (define <= (lambda (a b) 
+               (if (or (= a b) (< a b) )
+                 t
+                 f)))
+
+  (define >= (lambda (a b) 
+               (<= b a)))
+
+  (define != (lambda (a b) 
+               (! (= a b))))
+
+  (define zero? (lambda (x) 
+                  (= 0 x)))
+
+  (define ~ (lambda (x) (- 0 x)))
+  (define -- (lambda (x) (- x 1)))
+  (define ++ (lambda (x) (+ x 1)))
+
+
+  (define fact (lambda (x) 
+                 (if (<= x 1) 
+                   1 
+                   (* x (fact (-- x))))))
+
+  (define length (lambda (xs)
+                   (if xs
+                    (+ 1 (length (cdr xs)))
+                    0)))
+
+  (define empty? (lambda (xs)
+                   (= (length xs) 0)))
+
+  (define max (lambda (a b) (if (> a b) a b)))
+
+  (define min (lambda (a b) (if (< a b) a b)))
+    
+  (define range (lambda (min max)
+                  (if (< min max)
+                    (cons min (range (++ min) max))
+                    (list))))
+
+  (define filter (lambda (fn xs) 
+                   (if (empty? xs) (list)
+                     (if (fn (car xs))
+                       (cons (car xs) (filter fn (cdr xs)))
+                       (filter fn (cdr xs))))))
+
+  (define !rev (lambda (xs acc)
+                (if (empty? xs) 
+                  acc
+                  (!rev (cdr xs) (cons (car xs) acc)))))
+
+  (define rev (lambda (xs) (cdr (!rev xs (list)))))
+
+
+  (define map (lambda (fn xs)
+                (if (empty? xs)
+                  (list)
+                  (cons (fn (car xs)) (map fn (cdr xs))))))
+
+  (define even? (lambda (x) (= (% x 2) 0)))
+  (define odd? (lambda (x) (! (even? x))))
+)

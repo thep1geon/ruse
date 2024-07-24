@@ -24,7 +24,16 @@ $(TARGET): $(OBJ_FILES)
 	gcc $(CFLAGS) $^ -o $@ $(LIBS)
 
 run: $(TARGET)
-	$(TARGET)
+	$(TARGET) ./std/std.ruse
+
+install: $(TARGET)
+	sudo cp $(TARGET) /usr/local/bin/ruse
+	sudo mkdir -p /usr/local/lib/ruse
+	sudo cp std/* /usr/local/lib/ruse
+
+uninstall:
+	sudo rm /usr/local/bin/ruse
+	sudo rm -rf /usr/local/lib/ruse
 
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET_DIR)

@@ -1,19 +1,10 @@
 // TODO: 
 //      Split project into multiple files
-//      Use multiple files
-//      Strings
 //      Garbage collector - The arena allocator will not hold forever
-//      Execute files along with REPL
 //      Tail call recursion
 //      Write a real program in Ruse
-//      
-// General TODO: 
-//      Improve the Env type and functions
 //
 // Standard Library TODO:
-//      if expression
-//      Rest of arithmetics: *
-//      Logical operators
 //      IO  - Piggy back off of C's IO
 //          File handling
 //          Printing
@@ -24,6 +15,7 @@
 #include <stdio.h>
 #include <editline/readline.h>
 #include <string.h>
+#include <unistd.h>
 #include <pigeon/alias.h>
 #include <pigeon/arena.h>
 #include <pigeon/allocator.h>
@@ -44,6 +36,7 @@ typedef enum {
 
     TOKEN_NUMBER,
     TOKEN_SYMBOL,
+    TOKEN_STR,
 
     TOKEN_ERROR,
     TOKEN_EOF,
@@ -89,7 +82,7 @@ static inline bool is_space(char c) {
 
 static inline bool is_alpha(char c) {
     return ('A' <= c && c <= 'Z') ||
-            ('a' <= c && c <= 'z') || c == '_';
+    ('a' <= c && c <= 'z') || c == '_';
 }
 
 static inline bool is_special(char c) {
@@ -122,7 +115,7 @@ static inline bool is_symbol(char c) {
 Token next_token() {
 next_token: // Tail-call recusion in C goes crazy
     g_start = g_current;
-    if (*g_current == '\0' || *g_current == '\n') return token_new(TOKEN_EOF);
+    if (*g_current == '\0') return token_new(TOKEN_EOF);
 
     char c = *g_current++;
 
@@ -131,6 +124,21 @@ next_token: // Tail-call recusion in C goes crazy
     switch (c) {
         case '(': return token_new(TOKEN_LPAREN);
         case ')': return token_new(TOKEN_RPAREN);
+        case '"': {
+            g_start++;
+            while ((c = *g_current++) != '"') {
+                if (c == '\0') 
+                    return token_new_error("Unterminated string");
+            }
+
+            g_current--;
+
+            Token tok = token_new(TOKEN_STR);
+
+            g_current++;
+
+            return tok;
+        }
         case ';': {
             while (*g_current != '\n' && *g_current != '\0') {
                 g_current++;
@@ -174,55 +182,19 @@ typedef struct ParseResult ParseResult;
 typedef struct EvalResult EvalResult;
 
 typedef struct Env Env;
+EvalResult file(Env* env, const char* path);
+void repl(Env* env);
 
 typedef struct Expr Expr;
+
 typedef struct Atom Atom;
-typedef struct Cons Cons;
-typedef EvalResult(*Native)(Cons*,Env*);
-typedef struct Lambda Lambda;
-
-#define ENV_LEN (512)
-struct Env {
-    Expr** data;
-    u32 len;
-    Env* parent;
-};
-
-Env env_new(Env* parent) {
-    return (Env) {
-        .len = ENV_LEN,
-        .data = alloc(g_allocator, sizeof(Expr**) * ENV_LEN),
-        .parent = parent,
-    };
-}
-
-Expr* env_get(const Env* env, String value) {
-    u64 hash = string_hash(&value) % env->len;
-    Expr* expr = env->data[hash];
-
-    if (expr) {
-        return expr;
-    }
-
-    if (env->parent) {
-        return env_get(env->parent, value);
-    }
-
-    return NULL;
-}
-
-void env_put(Env* env, String value, Expr* expr) {
-    u64 hash = string_hash(&value) % env->len;
-    printf("\t\t%lu\n", hash);
-    env->data[hash] = expr;
-}
-
 // Tagged unions baby!
 struct Atom {
     enum {
         ATOM_NUMBER,
         ATOM_SYMBOL,
-        ATOM_BOOl,
+        ATOM_BOOL,
+        ATOM_STR,
     } tag;
 
     union {
@@ -231,11 +203,100 @@ struct Atom {
         struct {
             char* sym;
             u16 len;
-        } symbol;
+        } str;
 
         bool b;
     } as;
 };
+
+Atom* atom_new_number(f64 n);
+Atom* atom_new_symbol(char* sym, u16 len);
+Atom* atom_new_bool(bool b);
+Atom* atom_new_str(char* sym, u16 len);
+bool atom_is_truthy(Atom* atom);
+void atom_print(Atom* atom);
+
+typedef struct Cons Cons;
+struct Cons {
+    Expr* car;
+    Cons* cdr;
+};
+Cons* cons_new(Expr* car, Cons* cdr);
+u32 cons_len(Cons* cons);
+void cons_print(Cons* cons);
+
+typedef EvalResult(*Native)(Cons*,Env*);
+typedef struct Lambda Lambda;
+
+struct Expr {
+    enum {
+        EXPR_ATOM,
+        EXPR_CONS,
+        EXPR_NATIVE,
+        EXPR_LAMBDA,
+    }tag;
+
+    union {
+        Atom* atom;
+        Cons* cons;
+        Native native;
+        Lambda* lambda;
+    } as;
+};
+
+Expr* expr_new_atom(Atom* atom);
+Expr* expr_new_cons(Cons* cons);
+Expr* expr_new_native(Native native);
+Expr* expr_new_lambda(Lambda* lambda);
+void expr_print(Expr* expr);
+bool expr_is_truthy(Expr* expr);
+
+struct Env {
+    Cons* pairs;
+    Env* parent;
+};
+
+Env env_new(Env* parent) {
+    return (Env) {
+        .pairs = cons_new(NULL, NULL),
+        .parent = parent,
+    };
+}
+
+Expr* env_lookup(const Env* env, String key) {
+    Cons* pair = env->pairs;
+    while (pair->car) {
+        assert(pair->car->tag == EXPR_CONS);
+        Cons* entry = pair->car->as.cons;
+
+        assert(entry->car->tag == EXPR_ATOM && entry->car->as.atom->tag == ATOM_STR);
+        Atom* str = entry->car->as.atom;
+        String entry_key = string_from_parts(str->as.str.sym, str->as.str.len);
+
+        Expr* entry_expr = entry->cdr->car;
+
+        if (string_eq(&key, &entry_key)) {
+            return entry_expr;
+        }
+
+        pair = pair->cdr;
+    }
+
+    if (env->parent) {
+        return env_lookup(env->parent, key);
+    }
+
+    return NULL;
+}
+
+void env_bind(Env* env, String key, Expr* expr) {
+    Expr* entry = expr_new_cons(
+        cons_new(
+            expr_new_atom(atom_new_str((char*)key.data, key.len)), 
+            cons_new(expr, NULL)));
+
+    env->pairs = cons_new(entry, env->pairs);
+}
 
 Atom* atom_new_number(f64 n) {
     Atom* atom = alloc(g_allocator, sizeof(Atom));
@@ -247,16 +308,35 @@ Atom* atom_new_number(f64 n) {
 Atom* atom_new_symbol(char* sym, u16 len) {
     Atom* atom = alloc(g_allocator, sizeof(Atom));
     atom->tag = ATOM_SYMBOL;
-    atom->as.symbol.sym = sym;
-    atom->as.symbol.len = len;
+    atom->as.str.sym = sym;
+    atom->as.str.len = len;
+    return atom;
+}
+
+Atom* atom_new_str(char* sym, u16 len) {
+    Atom* atom = alloc(g_allocator, sizeof(Atom));
+    atom->tag = ATOM_STR;
+    atom->as.str.sym = sym;
+    atom->as.str.len = len;
     return atom;
 }
 
 Atom* atom_new_bool(bool b) {
     Atom* atom = alloc(g_allocator, sizeof(Atom));
-    atom->tag = ATOM_BOOl;
+    atom->tag = ATOM_BOOL;
     atom->as.b = b;
     return atom;
+}
+
+bool atom_is_truthy(Atom* atom) {
+    switch (atom->tag) {
+        case ATOM_SYMBOL: return true;
+        case ATOM_STR: return atom->as.str.len > 0;
+        case ATOM_NUMBER: return atom->as.number > 0;
+        case ATOM_BOOL: return atom->as.b;
+    }
+
+    assert(0 && "unreachable");
 }
 
 void atom_print(Atom* atom) {
@@ -267,21 +347,21 @@ void atom_print(Atom* atom) {
         }
 
         case ATOM_SYMBOL: {
-            printf(" %.*s ", atom->as.symbol.len, atom->as.symbol.sym);
+            printf(" %.*s ", atom->as.str.len, atom->as.str.sym);
             break;
         }
 
-        case ATOM_BOOl: {
+        case ATOM_STR: {
+            printf(" %.*s ", atom->as.str.len, atom->as.str.sym);
+            break;
+        }
+
+        case ATOM_BOOL: {
             printf(" %s ", atom->as.b ? "t" : "f");
             break;
         }
     }
 }
-
-struct Cons {
-    Expr* car;
-    Cons* cdr;
-};
 
 Cons* cons_new(Expr* car, Cons* cdr) {
     Cons* cons = alloc(g_allocator, sizeof(Cons));
@@ -299,8 +379,6 @@ u32 cons_len(Cons* cons) {
     }
     return len;
 }
-
-void expr_print(Expr* expr);
 
 void cons_print(Cons* cons) {
     printf("(");
@@ -329,22 +407,6 @@ Lambda* lambda_new(Expr* body, Cons* params, Env env) {
 
 EvalResult lambda_call(Lambda* lambda, Cons* args, Env* env);
 
-struct Expr {
-    enum {
-        EXPR_ATOM,
-        EXPR_CONS,
-        EXPR_NATIVE,
-        EXPR_LAMBDA,
-    }tag;
-
-    union {
-        Atom* atom;
-        Cons* cons;
-        Native native;
-        Lambda* lambda;
-    } as;
-};
-
 Expr* expr_new_atom(Atom* atom) {
     Expr* expr = alloc(g_allocator, sizeof(Expr));
     expr->tag = EXPR_ATOM;
@@ -371,6 +433,19 @@ Expr* expr_new_lambda(Lambda* lambda) {
     expr->tag = EXPR_LAMBDA;
     expr->as.lambda = lambda;
     return expr;
+}
+
+bool expr_is_truthy(Expr* expr) {
+    if (!expr) return false;
+
+    switch (expr->tag) {
+        case EXPR_ATOM: return atom_is_truthy(expr->as.atom);
+        case EXPR_LAMBDA: return true;
+        case EXPR_CONS: return cons_len(expr->as.cons) > 0;
+        case EXPR_NATIVE: return true;
+    }
+
+    assert(0 && "unreachable");
 }
 
 void expr_print(Expr* expr) {
@@ -407,7 +482,7 @@ struct ParseResult {
         PARSE_UNEXPECTED_TOKEN,
         PARSE_TYPE_COUNT,
     } tag;
-    
+
     union {
         Expr* expr;
 
@@ -491,6 +566,9 @@ ParseResult parse_atom(Token tok) {
         case TOKEN_SYMBOL: 
             return parse_result_ok(expr_new_atom(atom_new_symbol(tok.lexeme, tok.len))); 
 
+        case TOKEN_STR: 
+            return parse_result_ok(expr_new_atom(atom_new_str(tok.lexeme, tok.len))); 
+
         default: 
             return (ParseResult){
                 .tag = PARSE_UNEXPECTED_TOKEN,
@@ -498,7 +576,7 @@ ParseResult parse_atom(Token tok) {
                     .len = tok.len,
                     .errmsg = tok.lexeme,
                 },
-        };
+            };
     }
 }
 
@@ -512,6 +590,7 @@ struct EvalResult {
         EVAL_INVALID_TYPE,
         EVAL_INVALID_ARG_COUNT,
         EVAL_UNDEFINED_VARIABLE,
+        EVAL_ERR,
         EVAL_TYPE_COUNT,
     } tag;
 
@@ -530,6 +609,7 @@ const char* eval_result_lut[EVAL_TYPE_COUNT] = {
     [EVAL_INVALID_TYPE] = "INVALID TYPE",
     [EVAL_INVALID_ARG_COUNT] = "INVALID ARG COUNT",
     [EVAL_UNDEFINED_VARIABLE] = "UNDEFINED VARIABLE",
+    [EVAL_ERR] = "ERR",
 };
 
 EvalResult eval_result_ok(Expr* expr) {
@@ -565,22 +645,24 @@ EvalResult eval_atom(Expr* expr, Env* env) {
     switch (atom->tag) {
         case ATOM_NUMBER: return eval_result_ok(expr);
         case ATOM_SYMBOL: {
-            Expr* expr = env_get(
-                                env, 
-                                string_from_parts(atom->as.symbol.sym, atom->as.symbol.len));
+            Expr* expr = env_lookup(
+                env, 
+                string_from_parts(atom->as.str.sym, atom->as.str.len));
             if (expr) {
                 return eval_result_ok(expr);
             } else {
                 return (EvalResult) {
                     .tag = EVAL_UNDEFINED_VARIABLE,
                     .as.errmsg = {
-                        atom->as.symbol.sym, 
-                        atom->as.symbol.len
+                        atom->as.str.sym, 
+                        atom->as.str.len
                     },
                 };
             }
-        default: assert(0 && "unreachable");
+            break;
         }
+        case ATOM_STR: return eval_result_ok(expr);
+        default: assert(0 && "unreachable");
     }
 }
 
@@ -615,10 +697,10 @@ EvalResult lambda_call(Lambda* lambda, Cons* args, Env* env) {
         if (result.tag != EVAL_OK) return result;
         Expr* expr = result.as.expr;
 
-        env_put(&lambda->env, 
-                string_from_parts(lambda_params->car->as.atom->as.symbol.sym,
-                                  lambda_params->car->as.atom->as.symbol.len),
-                expr);
+        env_bind(&lambda->env, 
+                 string_from_parts(lambda_params->car->as.atom->as.str.sym,
+                                   lambda_params->car->as.atom->as.str.len),
+                 expr);
 
         lambda_params = lambda_params->cdr;
         argv = argv->cdr;
@@ -630,17 +712,6 @@ EvalResult lambda_call(Lambda* lambda, Cons* args, Env* env) {
 // End evaluating
 //
 // Native functions
-EvalResult native_len(Cons* args, Env* env) {
-    if (cons_len(args) != 1) return eval_result_err(EVAL_INVALID_ARG_COUNT, "'len' needs one list");
-
-    EvalResult result = eval(args->car, env);
-    if (result.tag != EVAL_OK) return result;
-    if (result.as.expr->tag != EXPR_CONS) return eval_result_err(EVAL_INVALID_TYPE, "'len' needs a list");
-    Cons* list = result.as.expr->as.cons;
-
-    return eval_result_ok(expr_new_atom(atom_new_number(cons_len(list))));
-}
-
 EvalResult native_sub(Cons* args, Env* env) {
     if (cons_len(args) != 2) 
         return eval_result_err(EVAL_INVALID_ARG_COUNT, "'-' needs two numbers");
@@ -665,6 +736,30 @@ EvalResult native_sub(Cons* args, Env* env) {
     return eval_result_ok(expr_new_atom(atom_new_number(a - b)));
 }
 
+EvalResult native_add(Cons* args, Env* env) {
+    if (cons_len(args) != 2) 
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "'+' needs two numbers");
+
+    EvalResult first_result = eval(args->car, env);
+    if (first_result.tag != EVAL_OK) return first_result;
+    Expr* first = first_result.as.expr;
+
+    EvalResult second_result = eval(args->cdr->car, env);
+    if (second_result.tag != EVAL_OK) return second_result;
+    Expr* second = second_result.as.expr;
+
+    if (first->tag != EXPR_ATOM || first->as.atom->tag != ATOM_NUMBER)
+        return eval_result_err(EVAL_INVALID_TYPE, "First arg must be a number");
+
+    if (second->tag != EXPR_ATOM || second->as.atom->tag != ATOM_NUMBER)
+        return eval_result_err(EVAL_INVALID_TYPE, "Second arg must be a number");
+
+    f64 a = first->as.atom->as.number;
+    f64 b = second->as.atom->as.number;
+
+    return eval_result_ok(expr_new_atom(atom_new_number(a + b)));
+}
+
 EvalResult native_div(Cons* args, Env* env) {
     if (cons_len(args) != 2) 
         return eval_result_err(EVAL_INVALID_ARG_COUNT, "'/' takes two numbers");
@@ -687,6 +782,54 @@ EvalResult native_div(Cons* args, Env* env) {
     f64 b = second->as.atom->as.number;
 
     return eval_result_ok(expr_new_atom(atom_new_number(a / b)));
+}
+
+EvalResult native_mod(Cons* args, Env* env) {
+    if (cons_len(args) != 2) 
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "'%' takes two numbers");
+
+    EvalResult first_result = eval(args->car, env);
+    if (first_result.tag != EVAL_OK) return first_result;
+    Expr* first = first_result.as.expr;
+
+    EvalResult second_result = eval(args->cdr->car, env);
+    if (second_result.tag != EVAL_OK) return second_result;
+    Expr* second = second_result.as.expr;
+
+    if (first->tag != EXPR_ATOM || first->as.atom->tag != ATOM_NUMBER)
+        return eval_result_err(EVAL_INVALID_TYPE, "First arg must be a number");
+
+    if (second->tag != EXPR_ATOM || second->as.atom->tag != ATOM_NUMBER)
+        return eval_result_err(EVAL_INVALID_TYPE, "Second arg must be a number");
+
+    f64 a = first->as.atom->as.number;
+    f64 b = second->as.atom->as.number;
+
+    return eval_result_ok(expr_new_atom(atom_new_number((i64)a % (i64)b)));
+}
+
+EvalResult native_mult(Cons* args, Env* env) {
+    if (cons_len(args) != 2) 
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "'*' takes two numbers");
+
+    EvalResult first_result = eval(args->car, env);
+    if (first_result.tag != EVAL_OK) return first_result;
+    Expr* first = first_result.as.expr;
+
+    EvalResult second_result = eval(args->cdr->car, env);
+    if (second_result.tag != EVAL_OK) return second_result;
+    Expr* second = second_result.as.expr;
+
+    if (first->tag != EXPR_ATOM || first->as.atom->tag != ATOM_NUMBER)
+        return eval_result_err(EVAL_INVALID_TYPE, "First arg must be a number");
+
+    if (second->tag != EXPR_ATOM || second->as.atom->tag != ATOM_NUMBER)
+        return eval_result_err(EVAL_INVALID_TYPE, "Second arg must be a number");
+
+    f64 a = first->as.atom->as.number;
+    f64 b = second->as.atom->as.number;
+
+    return eval_result_ok(expr_new_atom(atom_new_number(a * b)));
 }
 
 EvalResult native_lessthan(Cons* args, Env* env) {
@@ -717,7 +860,7 @@ EvalResult native_lessthan(Cons* args, Env* env) {
 EvalResult native_define(Cons* args, Env* env) {
     if (cons_len(args) != 2) 
         return eval_result_err(EVAL_INVALID_ARG_COUNT, "'define' takes two args");
-    
+
     if (args->car->tag != EXPR_ATOM) {
         return eval_result_err(EVAL_INVALID_TYPE, "'define' takes a symbol as the fist arg");
     }
@@ -728,7 +871,7 @@ EvalResult native_define(Cons* args, Env* env) {
     if (result.tag != EVAL_OK) return result;
     Expr* expr = result.as.expr;
 
-    env_put(env, string_from_parts(var->as.symbol.sym, var->as.symbol.len), expr);
+    env_bind(env, string_from_parts(var->as.str.sym, var->as.str.len), expr);
     return eval_result_ok(expr);
 }
 
@@ -737,11 +880,29 @@ EvalResult native_list(Cons* args, Env* env) {
     return eval_result_ok(expr_new_cons(args));
 }
 
-EvalResult native_println(Cons* args, Env* env) {
-    if (cons_len(args) != 2) 
-        return eval_result_err(EVAL_INVALID_ARG_COUNT, "'define' takes two args");
+EvalResult native_cons(Cons* args, Env* env) {
+    if (cons_len(args) != 2)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected two args");
 
-    EvalResult result = eval(args->cdr->car, env);
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    result = eval(args->cdr->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* list = result.as.expr;
+
+    if (list->tag != EXPR_CONS)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected a list as second arg");
+
+    return eval_result_ok(expr_new_cons(cons_new(expr, list->as.cons)));
+}
+
+EvalResult native_println(Cons* args, Env* env) {
+    if (cons_len(args) != 1) 
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "'println' takes two args");
+
+    EvalResult result = eval(args->car, env);
     if (result.tag != EVAL_OK) return result;
     Expr* expr = result.as.expr;
     expr_print(expr);
@@ -800,13 +961,181 @@ EvalResult native_lambda(Cons* args, Env* env) {
     return eval_result_ok(expr_new_lambda(lambda));
 }
 
+EvalResult native_do(Cons* args, Env* env) {
+    Cons* curr = args;
+
+    while (curr->car) {
+        EvalResult result = eval(curr->car, env);
+        if (result.tag != EVAL_OK) return result;
+
+        if (!curr->cdr) {
+            return eval_result_ok(result.as.expr);
+        }
+
+        curr = curr->cdr;
+    }
+
+    return eval_result_ok(expr_new_atom(atom_new_number(0)));
+}
+
+EvalResult native_if(Cons* args, Env* env) {
+    if (cons_len(args) != 3)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "'if' takes 3 args");
+
+    Expr* condition = args->car;
+    Expr* then = args->cdr->car;
+    Expr* else_ = args->cdr->cdr->car;
+
+    EvalResult result = eval(condition, env);
+    if (result.tag != EVAL_OK) return result;
+
+    if (expr_is_truthy(result.as.expr)) {
+        return eval(then, env);
+    } else {
+        return eval(else_, env);
+    }
+}
+
+EvalResult native_import(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "'import' takes one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    if (expr->tag != EXPR_ATOM && expr->as.atom->tag != ATOM_STR)
+        return eval_result_err(EVAL_INVALID_TYPE, "'import' takes a string");
+
+    Atom* atom = expr->as.atom;
+    char c = atom->as.str.sym[atom->as.str.len];
+    atom->as.str.sym[atom->as.str.len] = '\0';
+
+    i32 liblen = strlen("/usr/local/lib/ruse/");
+    char* libname = calloc(atom->as.str.len + 1 + liblen, 1);
+    memcpy(libname, (void*)"/usr/local/lib/ruse/", liblen);
+    libname = strcat(libname, atom->as.str.sym);
+
+    FILE* fd;
+    if ((fd = fopen(libname, "r"))) {
+        result = file(env, libname);
+        fclose(fd);
+    } else {
+        result = file(env, atom->as.str.sym);
+    }
+
+    free(libname);
+
+    atom->as.str.sym[atom->as.str.len-1] = c;
+
+    return result;
+}
+
+EvalResult native_cons_p(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    return eval_result_ok(expr_new_atom(atom_new_bool(expr->tag == EXPR_CONS)));
+}
+
+EvalResult native_native_p(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    return eval_result_ok(expr_new_atom(atom_new_bool(expr->tag == EXPR_NATIVE)));
+}
+
+EvalResult native_lambda_p(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    return eval_result_ok(expr_new_atom(atom_new_bool(expr->tag == EXPR_LAMBDA)));
+}
+
+EvalResult native_atom_p(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    return eval_result_ok(expr_new_atom(atom_new_bool(expr->tag == EXPR_ATOM)));
+}
+
+EvalResult native_bool_p(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    return eval_result_ok(expr_new_atom(atom_new_bool(expr->tag == EXPR_ATOM && expr->as.atom->tag == ATOM_BOOL)));
+}
+
+EvalResult native_num_p(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    return eval_result_ok(expr_new_atom(atom_new_bool(
+        expr->tag == EXPR_ATOM && expr->as.atom->tag == ATOM_NUMBER)));
+}
+EvalResult native_sym_p(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    return eval_result_ok(expr_new_atom(atom_new_bool(
+        expr->tag == EXPR_ATOM && expr->as.atom->tag == ATOM_SYMBOL)));
+}
+EvalResult native_str_p(Cons* args, Env* env) {
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "Expected one arg");
+
+    EvalResult result = eval(args->car, env);
+    if (result.tag != EVAL_OK) return result;
+    Expr* expr = result.as.expr;
+
+    return eval_result_ok(expr_new_atom(atom_new_bool(
+        expr->tag == EXPR_ATOM && expr->as.atom->tag == ATOM_STR)));
+}
+
 // End native functions
 
 void repl(Env* env) {
     while (1) {
         char* input = readline("ruse> ");
 
-        if (!input) break;
+        if (!input) {
+            free(input);
+            break;
+        }
+
+        if (strlen(input) == 0) {
+            free(input);
+            putchar('\n');
+            continue;
+        }
 
         add_history(input);
 
@@ -835,40 +1164,94 @@ void repl(Env* env) {
     }
 }
 
-void file(const char* path) {
+EvalResult file(Env* env, const char* path) {
     FILE* fd = fopen(path, "r");
+    if (!fd)
+        return eval_result_err(EVAL_ERR, "Failed to open file");
 
     fseek(fd, 0, SEEK_END);
     usize len = ftell(fd);
+
+    if (len == 0) {
+        fclose(fd);
+        return eval_result_err(EVAL_ERR, "Empty file");
+    }
+
     rewind(fd);
 
-    printf("%lud", len);
+    char* input = alloc(g_allocator, len);
+    fread(input, 1, len, fd);
+    input[len-1] = '\0';
+
+    fclose(fd);
+
+    ParseResult p_result = parse(input);
+    if (p_result.tag != PARSE_OK) {
+        fprintf(stderr, "Parsing Error: [%s] %.*s\n\n", 
+                parse_result_lut[p_result.tag],
+                p_result.as.errmsg.len, 
+                p_result.as.errmsg.errmsg);
+        return eval_result_err(EVAL_ERR, "Failed to parse file");
+    }
+
+    EvalResult result = eval(p_result.as.expr, env);
+    if (result.tag != EVAL_OK) {
+        fprintf(stderr, "Eval Error: [%s] %.*s\n", 
+                eval_result_lut[result.tag],
+                result.as.errmsg.len, 
+                result.as.errmsg.errmsg);
+        return result;
+    }
+
+    return eval_result_ok(NULL);
 }
 
-i32 main(void) {
+i32 main(i32 argc, char** argv) {
     g_arena = arena_new();
     g_allocator = arena_to_allocator(&g_arena);
 
     Env env = env_new(NULL);
-    env_put(&env, string_new("-"), expr_new_native(native_sub));
-    env_put(&env, string_new("/"), expr_new_native(native_div));
-    env_put(&env, string_new("<"), expr_new_native(native_lessthan));
+    env_bind(&env, string_new("-"), expr_new_native(native_sub));
+    env_bind(&env, string_new("+"), expr_new_native(native_add));
+    env_bind(&env, string_new("/"), expr_new_native(native_div));
+    env_bind(&env, string_new("%"), expr_new_native(native_mod));
+    env_bind(&env, string_new("*"), expr_new_native(native_mult));
+    env_bind(&env, string_new("<"), expr_new_native(native_lessthan));
 
-    env_put(&env, string_new("define"), expr_new_native(native_define));
-    env_put(&env, string_new("println"), expr_new_native(native_println));
+    env_bind(&env, string_new("define"), expr_new_native(native_define));
+    env_bind(&env, string_new("do"), expr_new_native(native_do));
+    env_bind(&env, string_new("println"), expr_new_native(native_println));
+    env_bind(&env, string_new("if"), expr_new_native(native_if));
 
-    env_put(&env, string_new("list"), expr_new_native(native_list));
-    env_put(&env, string_new("car"), expr_new_native(native_car));
-    env_put(&env, string_new("cdr"), expr_new_native(native_cdr));
-    env_put(&env, string_new("len"), expr_new_native(native_len));
+    env_bind(&env, string_new("cons?"), expr_new_native(native_cons_p));
+    env_bind(&env, string_new("atom?"), expr_new_native(native_atom_p));
+    env_bind(&env, string_new("native?"), expr_new_native(native_native_p));
+    env_bind(&env, string_new("lambda?"), expr_new_native(native_lambda_p));
+    env_bind(&env, string_new("num?"), expr_new_native(native_num_p));
+    env_bind(&env, string_new("bool?"), expr_new_native(native_bool_p));
+    env_bind(&env, string_new("str?"), expr_new_native(native_str_p));
+    env_bind(&env, string_new("sym?"), expr_new_native(native_sym_p));
 
-    env_put(&env, string_new("lambda"), expr_new_native(native_lambda));
+    env_bind(&env, string_new("import"), expr_new_native(native_import));
 
-    env_put(&env, string_new("t"), expr_new_atom(atom_new_bool(true)));
-    env_put(&env, string_new("f"), expr_new_atom(atom_new_bool(false)));
+    env_bind(&env, string_new("list"), expr_new_native(native_list));
+    env_bind(&env, string_new("cons"), expr_new_native(native_cons));
+    env_bind(&env, string_new("car"), expr_new_native(native_car));
+    env_bind(&env, string_new("cdr"), expr_new_native(native_cdr));
+
+    env_bind(&env, string_new("lambda"), expr_new_native(native_lambda));
+
+    env_bind(&env, string_new("t"), expr_new_atom(atom_new_bool(true)));
+    env_bind(&env, string_new("f"), expr_new_atom(atom_new_bool(false)));
+
+    if (argc >= 2) {
+        EvalResult result = file(&env, argv[1]);
+        if (result.tag != EVAL_OK) goto end;
+    }
 
     repl(&env);
 
+end:
     arena_free(&g_arena);
     return 0;
 }

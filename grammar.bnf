@@ -2,4 +2,4 @@ expression    = atomic | list ;
 
 list          = "(" ( expression )* ")" ;
 
-atom          = SYM | NUM ; 
+atom          = SYM | NUM | " SYM " ; 
