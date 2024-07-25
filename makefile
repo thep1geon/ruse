@@ -10,18 +10,20 @@ SRC_FILES := $(shell find $(SRC_DIR) -type f -name "*.c")
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_FILES))
 
 CFLAGS := -Wall -Wextra -g -pedantic -fsanitize=address
-# CFLAGS := -Wall -Wextra -pedantic
+# CFLAGS := -Wall -Wextra -pedantic -O3
 LIBS := -lpigeon -lreadline
+
+CC := gcc
 
 all: $(TARGET)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(@D)
-	gcc $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(TARGET): $(OBJ_FILES)
 	@mkdir -p $(@D)
-	gcc $(CFLAGS) $^ -o $@ $(LIBS)
+	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 run: $(TARGET)
 	$(TARGET) ./std/std.ruse

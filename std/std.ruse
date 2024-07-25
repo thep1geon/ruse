@@ -1,36 +1,28 @@
 (do
-  (define ! (lambda (a) 
-              (if a 
-                f 
-                t)))
+  (define else t)
 
-  (define or (lambda (a b) 
-               (if a 
-                 t 
-                 (if b 
-                   t 
-                   f))))
+  (define ! (lambda (a) 
+              (cond
+                (a f)
+                (else t))))
 
   (define and (lambda (a b) 
-                (if a 
-                  (if b 
-                    t 
-                    f) 
-                  f)))
+                (cond
+                  ((! a) f)
+                  ((! b) f)
+                  (else t))))
+
+  (define or (lambda (a b) 
+               (! (and (! a) (! b)))))
 
   (define > (lambda (a b) 
               (< b a)))
 
   (define = (lambda (a b) 
-              (if (> a b) f 
-                (if (< a b) 
-                  f 
-                  t))))
+              (! (or (> a b) (< a b)))))
 
   (define <= (lambda (a b) 
-               (if (or (= a b) (< a b) )
-                 t
-                 f)))
+               (or (= a b) (< a b))))
 
   (define >= (lambda (a b) 
                (<= b a)))
@@ -64,23 +56,25 @@
   (define min (lambda (a b) (if (< a b) a b)))
     
   (define range (lambda (min max)
-                  (if (< min max)
-                    (cons min (range (++ min) max))
-                    (list))))
+                  (cond
+                    ((< min max) (cons min (range (++ min) max)))
+                    (else (list)))))
 
   (define filter (lambda (fn xs) 
-                   (if (empty? xs) (list)
-                     (if (fn (car xs))
-                       (cons (car xs) (filter fn (cdr xs)))
-                       (filter fn (cdr xs))))))
+                    (cond
+                      ((empty? xs) (list))
+
+                      ((fn (car xs)) 
+                        (cons (car xs) (filter fn (cdr xs))))
+
+                      (else (filter fn (cdr xs))))))
 
   (define !rev (lambda (xs acc)
-                (if (empty? xs) 
-                  acc
-                  (!rev (cdr xs) (cons (car xs) acc)))))
+                (if xs
+                  (!rev (cdr xs) (cons (car xs) acc))
+                  acc)))
 
-  (define rev (lambda (xs) (cdr (!rev xs (list)))))
-
+  (define rev (lambda (xs) (!rev xs (list))))
 
   (define map (lambda (fn xs)
                 (if (empty? xs)
@@ -89,4 +83,25 @@
 
   (define even? (lambda (x) (= (% x 2) 0)))
   (define odd? (lambda (x) (! (even? x))))
+
+  (define nth (lambda (xs n) 
+                 (if (= n 0)
+                   (car xs)
+                   (nth (cdr xs) (-- n)))))
+
+  (define last (lambda (xs)
+                 (cond 
+                   ((empty? xs) nil)
+                   ((= 1 (length xs)) (car xs))
+                   (else (last (cdr xs))))))
+
+  (define x (let ((x 8)
+                (y 4))
+            (cond
+              ((= x y) (- x y))
+              ((> x y) (range y x))
+              (else "Lt")
+            )
+
+    ))
 )

@@ -1,0 +1,23 @@
+(do
+  (let
+    ((x 3)
+     (y 4))
+    
+    (println (+ x y))
+    )
+
+  (import "std.ruse")
+
+  (define tokenize (lambda (str)
+                     (if (! (str? str))
+                       nil
+                       (println str))))
+
+  (define eval (lambda (str) 
+                 (tokenize str)))
+
+  (define start (lambda ()
+                  (do
+                    (println (eval (read)))
+                    (start))))
+)
