@@ -30,6 +30,9 @@
   (define != (lambda (a b) 
                (! (= a b))))
 
+  (define neq (lambda (a b)
+                (! (eq a b))))
+
   (define zero? (lambda (x) 
                   (= 0 x)))
 
@@ -43,42 +46,54 @@
                    1 
                    (* x (fact (-- x))))))
 
-  (define length (lambda (xs)
+  (define len (lambda (xs)
                    (if xs
-                    (+ 1 (length (cdr xs)))
+                    (+ 1 (len (cdr xs)))
                     0)))
 
   (define empty? (lambda (xs)
-                   (= (length xs) 0)))
+                   (= (len xs) 0)))
 
-  (define max (lambda (a b) (if (> a b) a b)))
+  (define max2 (lambda (a b) (if (> a b) a b)))
 
-  (define min (lambda (a b) (if (< a b) a b)))
-    
-  (define range (lambda (min max)
+  (define _max (lambda (xs currmax)
+                 (if xs 
+                   (_max (cdr xs) (max2 (car xs) currmax)) 
+                   currmax)))
+
+  (define max (lambda (xs) (_max xs (~ 9999999999999999))))
+
+  (define min2 (lambda (a b) (if (< a b) a b)))
+
+  (define _min (lambda (xs currmin)
+                 (if xs 
+                   (_min (cdr xs) (min2 (car xs) currmin)) 
+                   currmin)))
+
+  (define min (lambda (xs) (_min xs 9999999999999999)))
+
+  (define range (lambda (from to)
                   (cond
-                    ((< min max) (cons min (range (++ min) max)))
-                    (else (list)))))
+                    ((< from to) (cons from (range (++ from) to)))
+                    (else (quote)))))
 
   (define filter (lambda (fn xs) 
                     (cond
-                      ((empty? xs) (list))
+                      ((empty? xs) (quote))
 
                       ((fn (car xs)) 
                         (cons (car xs) (filter fn (cdr xs))))
 
                       (else (filter fn (cdr xs))))))
 
-  (define !rev (lambda (xs acc)
-                (if xs
-                  (!rev (cdr xs) (cons (car xs) acc))
-                  acc)))
-
-  (define rev (lambda (xs) (!rev xs (list))))
+  (define rev (lambda (xs)
+                 (cond
+                   ((empty? xs) (quote))
+                   (else (append-list (rev (cdr xs)) (list (car xs)))))))
 
   (define map (lambda (fn xs)
                 (if (empty? xs)
-                  (list)
+                  (quote)
                   (cons (fn (car xs)) (map fn (cdr xs))))))
 
   (define even? (lambda (x) (= (% x 2) 0)))
@@ -92,16 +107,77 @@
   (define last (lambda (xs)
                  (cond 
                    ((empty? xs) nil)
-                   ((= 1 (length xs)) (car xs))
+                   ((= 1 (len xs)) (car xs))
                    (else (last (cdr xs))))))
 
-  (define x (let ((x 8)
-                (y 4))
-            (cond
-              ((= x y) (- x y))
-              ((> x y) (range y x))
-              (else "Lt")
-            )
+  (define cadr (lambda (xs)
+                 (car (cdr xs))))
 
-    ))
+  (define caar (lambda (xs)
+                 (car (car xs))))
+
+  (define in? (lambda (x xs)
+               (cond 
+                 ((empty? xs) f)
+                 ((= (car xs) x) t)
+                 (else (in? x (cdr xs))))))
+
+  (define append-list (lambda (xs ys) 
+                        (cond
+                          ((empty? ys) xs)
+                          (else (append-list (append (car ys) xs) (cdr ys))))))
+
+  (define append (lambda (x xs)
+                   (cond 
+                     ((empty? xs) (list x))
+                     (else (cons (car xs) (append x (cdr xs)))))))
+
+  (define str-car (lambda (s)
+                    (if s
+                      (substr s 0 1) 
+                      nil)))
+
+  (define str-cdr (lambda (s)
+                    (if s 
+                      (substr s 1 (strlen s)) 
+                      nil)))
+
+  (define type (lambda (x)
+                 (cond
+                   ((cons? x)   "CONS")
+                   ((native? x) "NATIVE")
+                   ((lambda? x) "LAMBDA")
+                   ((num? x)    "NUM")
+                   ((bool? x)   "BOOL")
+                   ((str? x)    "STR")
+                   ((sym? x)    "SYM")
+                   ((atom? x)   "ATOM")
+                   ((nil? x)    "NIL")
+                   (else        "dunno"))))
+
+  (define digit? (lambda (ch)
+                     (cond 
+                       ((eq ch "0") t)
+                       ((eq ch "1") t)
+                       ((eq ch "2") t)
+                       ((eq ch "3") t)
+                       ((eq ch "4") t)
+                       ((eq ch "5") t)
+                       ((eq ch "6") t)
+                       ((eq ch "7") t)
+                       ((eq ch "8") t)
+                       ((eq ch "9") t)
+                       (else f))))
+
+  (define space? (lambda (ch)
+                   (cond
+                     ((eq ch " ") t)
+                     (else f))))
+
+  (define make-counter (lambda ()
+                         (let ((x 0))
+                           (lambda ()
+                             (do
+                               (define x (++ x))
+                               (-- x))))))
 )

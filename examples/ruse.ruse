@@ -1,23 +1,168 @@
 (do
-  (let
-    ((x 3)
-     (y 4))
-    
-    (println (+ x y))
-    )
-
   (import "std.ruse")
 
+  (define counter (make-counter))
+
+  (define TOKEN_RPAREN (counter))
+  (define TOKEN_LPAREN (counter))
+  (define TOKEN_NUMBER (counter))
+  (define TOKEN_SYM    (counter))
+  (define TOKEN_ERROR  (counter))
+
+  (define EXPR_NUMBER  (counter))
+  (define EXPR_SYM     (counter))
+  (define EXPR_LIST    (counter))
+
+  ;; token : (type lexeme)
+
+  (define new-token (lambda (t l)
+                      (if (! l) 
+                        (list t) 
+                        (list t l))))
+
+  (define lencondigits (lambda (str i)
+                          (let ((char (str-car str)))
+                            (if (! (digit? char)) 
+                              i
+                              (lencondigits (str-cdr str) (++ i))))))
+
+  (define new-number-token (lambda (str)
+                             (let ((idx (lencondigits str 0)))
+                               (cons 
+                                 (new-token TOKEN_NUMBER (substr str 0 idx))
+                                 (tokenize (advance str idx))
+                               ))))
+
+  (define char? (lambda (ch) 
+                  (cond
+                    ((eq ch "+") t)
+                    ((eq ch "-") t)
+                    ((eq ch "*") t)
+                    ((eq ch "/") t)
+                    (else f))))
+
+  (define lenconchars (lambda (str i)
+                          (let ((char (str-car str)))
+                            (if (! (char? char)) 
+                              i
+                              (lenconchars (str-cdr str) (++ i))))))
+
+  (define new-sym-token (lambda (str)
+                             (let ((idx (lenconchars str 0)))
+                               (cons 
+                                 (new-token TOKEN_SYM (substr str 0 idx))
+                                 (tokenize (advance str idx))
+                                 ))))
+
+  (define advance (lambda (xs i)
+                    (cond
+                      ((zero? i) xs)
+
+                      ((str? xs) 
+                        (advance (str-cdr xs) (-- i)))
+
+                      (else 
+                        (advance (cdr xs) (-- i)))
+                      )))
+
   (define tokenize (lambda (str)
-                     (if (! (str? str))
-                       nil
-                       (println str))))
+                     (cond
+                       ((! str) (list))
 
-  (define eval (lambda (str) 
-                 (tokenize str)))
+                       (else 
+                        (let ((ch (str-car str)))
+                          (cond 
+                            ((space? ch)
+                             (tokenize (advance str 1)))
 
-  (define start (lambda ()
+                            ((eq ch "(") 
+                             (cons 
+                               (new-token TOKEN_LPAREN "(")
+                               (tokenize (advance str 1))))
+
+                            ((eq ch ")") 
+                             (cons 
+                               (new-token TOKEN_RPAREN ")")
+                               (tokenize (advance str 1))))
+
+                            ((digit? ch) 
+                             (new-number-token str))
+
+                            ((char? ch)
+                             (new-sym-token str))
+
+                            (else (new-token TOKEN_ERROR str))
+                          ))))))
+
+  (define expr-new (lambda (type lit)
+                     (if (! lit)
+                       (list type)
+                       (list type lit))))
+
+  (define parse-atom (lambda (toks)
+                       (let ((tok (car toks)))
+                         (cond
+                           ((eq (car tok) TOKEN_NUMBER) 
+                              (expr-new EXPR_NUMBER (cadr tok)))
+
+                           ((eq (car tok) TOKEN_SYM) 
+                              (expr-new EXPR_SYM (cadr tok)))
+                       ))))
+
+  (define parse-list (lambda (toks)
+                       (cond 
+                         ((eq (caar toks) TOKEN_RPAREN) 
+                          (list))
+
+                         (else 
+                           (cons (parse (cdr toks)) 
+                                 (parse-list (cdr toks))))
+                       )))
+
+  (define parse (lambda (toks)
+                  (cond
+                    ((eq (caar toks) TOKEN_LPAREN) 
+                       (cons EXPR_LIST (parse-list toks)))
+
+                    (else 
+                      (parse-atom toks))
+                    )))
+
+  (define read (lambda (str) (parse (tokenize str))))
+
+  (define eval (lambda (expr)
+                   (cond
+                     ((eq (car expr) EXPR_NUMBER) (strtoi (cadr expr)))
+
+                     ((eq (car expr) EXPR_SYM) 
+                      (cond
+                        ((eq (cadr expr) "+") +)
+                        ((eq (cadr expr) "-") -)
+                        ((eq (cadr expr) "*") *)
+                        ((eq (cadr expr) "/") /)
+                        (else nil)
+                        ))
+
+                     ((eq (car expr) EXPR_LIST)
+                      (let ()
+                        (define fn (nth expr 1))
+                        (define a (nth expr 2))
+                        (define b (nth expr 3))
+                        ((eval fn) (eval a) (eval b))
+                        ))
+
+                     (else nil)
+                   )))
+
+  (define rep (lambda (str)
+                (println (eval (read str)))))
+
+  (define repl (lambda ()
                   (do
-                    (println (eval (read)))
-                    (start))))
-)
+                    (print "Ruse>>")
+                    (rep (input))
+                    (println "")
+                    (repl))))
+
+  (repl)
+  )
