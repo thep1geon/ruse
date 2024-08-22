@@ -144,16 +144,16 @@
 
   (define type (lambda (x)
                  (cond
-                   ((cons? x)   "CONS")
-                   ((native? x) "NATIVE")
-                   ((lambda? x) "LAMBDA")
-                   ((num? x)    "NUM")
-                   ((bool? x)   "BOOL")
-                   ((str? x)    "STR")
-                   ((sym? x)    "SYM")
-                   ((atom? x)   "ATOM")
-                   ((nil? x)    "NIL")
-                   (else        "dunno"))))
+                   ((cons? x)   (quote CONS))
+                   ((native? x) (quote NATIVE))
+                   ((lambda? x) (quote LAMBDA))
+                   ((num? x)    (quote NUM))
+                   ((bool? x)   (quote BOOL))
+                   ((str? x)    (quote STR))
+                   ((sym? x)    (quote SYM))
+                   ((atom? x)   (quote ATOM))
+                   ((nil? x)    (quote NIL))
+                   (else        (quote dunno)))))
 
   (define digit? (lambda (ch)
                      (cond 

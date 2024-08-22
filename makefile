@@ -10,7 +10,7 @@ SRC_FILES := $(shell find $(SRC_DIR) -type f -name "*.c")
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_FILES))
 
 CFLAGS := -Wall -Wextra -g -pedantic -fsanitize=address
-# CFLAGS := -Wall -Wextra -pedantic -O3
+# CFLAGS := -Wall -Wextra -pedantic 
 LIBS := -lpigeon -lreadline
 
 CC := gcc

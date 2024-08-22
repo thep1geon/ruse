@@ -1,9 +1,8 @@
-// TODO: 
+// TODO:
 //      Find better name than Ruse
 //      Tail call optimization
-//      Write Ruse in Ruse?
 //
-// Standard Library TODO:
+// TODO: Standard Library
 //      Various string to other types
 //      IO  - Piggy back off of C's IO
 //          File handling
@@ -179,7 +178,7 @@ typedef struct ParseResult ParseResult;
 typedef struct EvalResult EvalResult;
 
 typedef struct Env Env;
-EvalResult file(Env* env, const char* path);
+EvalResult exec_file(Env* env, const char* path);
 void repl(Env* env);
 
 typedef struct Expr Expr;
@@ -946,7 +945,7 @@ EvalResult native_define(Cons* args, Env* env) {
     if (cons_len(args) != 2) 
         return eval_result_err(EVAL_INVALID_ARG_COUNT, "'define' takes two args");
 
-    if (args->car->tag != EXPR_ATOM) {
+    if (args->car->tag != EXPR_ATOM || args->car->as.atom->tag != ATOM_SYMBOL) {
         return eval_result_err(EVAL_INVALID_TYPE, "'define' takes a symbol as the fist arg");
     }
 
@@ -962,7 +961,11 @@ EvalResult native_define(Cons* args, Env* env) {
 
 EvalResult native_quote(Cons* args, Env* env) {
     (void)env;
-    return eval_result_ok(expr_new_cons(args));
+
+    if (cons_len(args) != 1)
+        return eval_result_err(EVAL_INVALID_ARG_COUNT, "'quote' takes one arg");
+
+    return eval_result_ok(args->car);
 }
 
 EvalResult native_list(Cons* args, Env* env) {
@@ -1326,10 +1329,10 @@ EvalResult native_import(Cons* args, Env* env) {
 
     FILE* fd;
     if ((fd = fopen(libname, "r"))) {
-        result = file(env, libname);
+        result = exec_file(env, libname);
         fclose(fd);
     } else {
-        result = file(env, atom->as.str.sym);
+        result = exec_file(env, atom->as.str.sym);
     }
 
     free(libname);
@@ -1500,7 +1503,7 @@ void repl(Env* env) {
     }
 }
 
-EvalResult file(Env* env, const char* path) {
+EvalResult exec_file(Env* env, const char* path) {
     FILE* fd = fopen(path, "r");
     if (!fd)
         return eval_result_err(EVAL_ERR, "Failed to open file");
@@ -1594,7 +1597,7 @@ i32 main(i32 argc, char** argv) {
     env_bind(env, string_new("nil"), expr_new_atom(atom_new_nil()));
 
     if (argc >= 2) {
-        EvalResult result = file(env, argv[1]);
+        EvalResult result = exec_file(env, argv[1]);
         if (result.tag != EVAL_OK) goto end;
     }
 
